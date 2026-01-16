@@ -1,0 +1,235 @@
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { zodValidator } from "@tanstack/zod-adapter";
+import { fetchQuery, graphql } from "react-relay";
+import { z } from "zod";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import {
+  Card,
+  CardDescription,
+  CardHeader,
+  CardPanel,
+  CardTitle,
+} from "../components/ui/card";
+import { Skeleton } from "../components/ui/skeleton";
+import type { routesSearchRepositoriesQuery } from "../utils/relay/__generated__/routesSearchRepositoriesQuery.graphql";
+
+const searchSchema = z.object({
+	query: z.string().optional(),
+	after: z.string().optional(),
+	before: z.string().optional(),
+});
+
+const SEARCH_QUERY = graphql`
+	query routesSearchRepositoriesQuery(
+		$query: String!
+		$first: Int
+		$after: String
+		$last: Int
+		$before: String
+	) {
+		search(
+			query: $query
+			type: REPOSITORY
+			first: $first
+			after: $after
+			last: $last
+			before: $before
+		) {
+			repositoryCount
+			pageInfo {
+				endCursor
+				startCursor
+				hasNextPage
+				hasPreviousPage
+			}
+			edges {
+				node {
+					... on Repository {
+						id
+						name
+						description
+						url
+						stargazerCount
+						owner {
+							login
+						}
+					}
+				}
+			}
+		}
+	}
+`;
+
+export const Route = createFileRoute("/index/_index")({
+	component: SearchResultsPage,
+	pendingComponent: SearchResultsPending,
+	validateSearch: zodValidator(searchSchema),
+	loaderDeps: ({ search: { query, after, before } }) => ({
+		query,
+		after,
+		before,
+	}),
+	loader: async ({
+		context: { relayEnvironment },
+		deps: { query, after, before },
+	}) => {
+    console.log(query, after, before);
+		const variables = {
+			query: query?.trim() ?? "React",
+			first: before ? null : 10,
+			after: before ? null : after || null,
+			last: before ? 10 : null,
+			before: before || null,
+		}
+		const data = await fetchQuery<routesSearchRepositoriesQuery>(
+			relayEnvironment,
+			SEARCH_QUERY,
+			variables,
+			{ fetchPolicy: "store-or-network" },
+		).toPromise();
+
+		if (!data) {
+			throw new Error("Failed to fetch search data");
+		}
+
+		return data;
+	},
+	head: ({ match }) => {
+		const query = match?.search?.query;
+		return {
+			meta: [
+				{
+					title: query ? `${query} | cside` : "cside | Search Repositories",
+				},
+			],
+		}
+	},
+});
+
+function SearchResultsPending() {
+	return (
+		<>
+			<div className="mb-4">
+				<Skeleton className="h-5 w-48" />
+			</div>
+			<div className="space-y-4">
+				{[1, 2, 3].map((i) => (
+					<Card key={i}>
+						<CardHeader>
+							<Skeleton className="h-6 w-48 mb-2" />
+							<Skeleton className="h-4 w-full" />
+						</CardHeader>
+						<CardPanel>
+							<Skeleton className="h-5 w-24" />
+						</CardPanel>
+					</Card>
+				))}
+			</div>
+		</>
+	)
+}
+
+function SearchResultsPage() {
+	const { query } = Route.useSearch();
+	const data = Route.useLoaderData();
+
+	const repositories =
+		data.search.edges?.filter((edge) => edge?.node?.id && edge?.node?.name) ||
+		[]
+
+	const pageInfo = data.search.pageInfo;
+
+	if (repositories.length === 0) {
+		return (
+			<div className="text-center text-muted-foreground py-8">
+				No repositories found. Try a different search term.
+			</div>
+		)
+	}
+
+	return (
+		<>
+			<div className="mb-4 text-sm text-muted-foreground">
+				Found {new Intl.NumberFormat().format(data.search.repositoryCount)}{" "}
+				repositories
+			</div>
+			<div className="space-y-4 mb-6">
+				{repositories.map((edge) => {
+					const repo = edge?.node;
+					if (!repo || !repo.id || !repo.name) return null;
+
+					const owner = repo.owner?.login;
+					if (!owner) return null;
+
+					return (
+						<Link
+							key={repo.id}
+							to="/repository/$owner/$name"
+							params={{ owner, name: repo.name }}
+							className="block"
+						>
+							<Card className="hover:shadow-md transition-shadow">
+								<CardHeader>
+									<CardTitle>
+										{owner}/{repo.name}
+									</CardTitle>
+									{repo.description && (
+										<CardDescription>{repo.description}</CardDescription>
+									)}
+								</CardHeader>
+								<CardPanel>
+									<div className="flex items-center gap-4">
+										{repo.stargazerCount != null && (
+											<Badge variant="outline">
+												⭐ {repo.stargazerCount.toLocaleString()} stars
+											</Badge>
+										)}
+									</div>
+								</CardPanel>
+							</Card>
+						</Link>
+					)
+				})}
+			</div>
+
+			{/* Pagination */}
+			{(pageInfo?.hasNextPage || pageInfo?.hasPreviousPage) && (
+				<div className="flex items-center justify-center gap-4">
+					<Button
+						disabled={!pageInfo?.hasPreviousPage || !pageInfo.startCursor}
+						variant="outline"
+						render={
+							<Link
+								to="/"
+								search={{
+									query: query || undefined,
+									before: pageInfo.startCursor || undefined,
+									after: undefined,
+								}}
+							/>
+						}
+					>
+						Previous
+					</Button>
+
+					<Button
+						disabled={!pageInfo?.hasNextPage || !pageInfo.endCursor}
+						variant="outline"
+						render={
+							<Link
+								to="/"
+								search={{
+									query: query || undefined,
+									after: pageInfo.endCursor || undefined,
+								}}
+							/>
+						}
+					>
+						Next
+					</Button>
+				</div>
+			)}
+		</>
+	)
+}
