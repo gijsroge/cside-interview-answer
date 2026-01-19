@@ -3,10 +3,10 @@ import { RepositoryIssuesList } from "@/components/repository/repository-issues-
 import { Button } from "@/components/ui/button";
 import type { repositoryLayoutIssuesQuery } from "@/utils/relay/__generated__/repositoryLayoutIssuesQuery.graphql";
 import type { repositoryQuery } from "@/utils/relay/__generated__/repositoryQuery.graphql";
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { zodValidator } from "@tanstack/zod-adapter";
+import { goBackTo } from "go-back-to";
 import { fetchQuery, graphql } from "react-relay";
-import { useGoBack } from "use-go-back";
 import { z } from "zod";
 
 const REPOSITORY_LAYOUT_QUERY = graphql`
@@ -117,10 +117,7 @@ function RepositoryLayout() {
 	const repo = repoData?.repository;
 	const search = Route.useSearch();
 	const { owner, name } = Route.useParams();
-
-	const goBack = useGoBack({
-		targetPathname: "/",
-	});
+	const navigate = useNavigate();
 
 	if (!repo) {
 		return (
@@ -135,7 +132,20 @@ function RepositoryLayout() {
 	return (
 		<div className="grid gap-4 container mx-auto p-4 md:p-6 max-w-4xl">
 			<div className="flex items-center gap-4">
-				<Button onClick={goBack} variant="outline" size="lg">
+				<Button
+					onClick={() =>
+						goBackTo({
+							targetPathname: "/",
+							fallbackCallback: () => {
+								navigate({
+									to: "/",
+								});
+							},
+						})
+					}
+					variant="outline"
+					size="lg"
+				>
 					← Back
 				</Button>
 			</div>
